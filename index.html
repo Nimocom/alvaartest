@@ -94,10 +94,15 @@
                     const pose = alva.findCameraPose(frame);
 
                     if (pose) {
-                        // Send pose data to Unity
-                        if (typeof unityInstance !== 'undefined') {
                             var dataString = JSON.stringify(pose);
                             unityInstance.SendMessage('CameraPoseManager', 'ReceiveCameraPose', dataString);
+                    }
+                    else {
+                        const dots = alva.getFramePoints();
+
+                        for (const p of dots) {
+                            ctx.fillStyle = 'white';
+                            ctx.fillRect(p.x, p.y, 2, 2);
                         }
                     }
                 }, 30);
