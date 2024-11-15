@@ -42,73 +42,64 @@
     </style>
 </head>
 <body>
-    <!-- Webcam Video Element -->
-    <div id="webcam"></div>
 
-    <!-- Unity Canvas Container -->
+    <video id="webcam" autoplay playsinline muted></video>
+
     <div id="unityContainer">
-        <!-- Unity canvas will be inserted here -->
+
     </div>
 
     <script type="module">
         import { AlvaAR } from './alva_ar.js';
-        import { Camera, onFrame, resize2cover } from './utils.js';
+        import { onFrame } from './utils.js';
 
-        // Access the user's webcam
-        async function main() {
 
-            const config = {
-                video: {
-                    facingMode: 'environment',
-                    aspectRatio: 16 / 9,
-                    width: { ideal: 1280 }
-                },
-                audio: false
+        async function startWebcam() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { min: 1024, ideal: 1280, max: 1920 }, height: { min: 576, ideal: 720, max: 1080 }, facingMode: 'environment' }, audio: false });
+            const videoElement = document.getElementById('webcam');
+            videoElement.srcObject = stream;
+            await videoElement.play();
+
+            const webcamCanvas = document.createElement("canvas");
+            document.body.appendChild(webcamCanvas);
+            webcamCanvas.id = "webcam-canvas";
+            const ctx = webcamCanvas.getContext('2d', { alpha: false, desynchronized: true });
+
+            if (!ctx) {
+                console.error('Failed to get 2D context');
+                return;
             }
 
-            const $container = document.getElementById('webcam');
-            const $canvas = document.createElement('canvas');
+            webcamCanvas.width = videoElement.videoWidth;
+            webcamCanvas.height = videoElement.videoHeight;
 
-            async function calculatePose(media) {
+            const alva = await AlvaAR.Initialize(webcamCanvas.width, webcamCanvas.height);
 
-                const $video = media.el;
 
-                const size = resize2cover($video.videoWidth, $video.videoHeight, $container.clientWidth, $container.clientHeight);
+            onFrame(() => {
+                ctx.clearRect(0, 0, webcamCanvas.width, webcamCanvas.height);
+                ctx.drawImage(videoElement, 0, 0, videoElement.videoWidth, videoElement.videoHeight, 0, 0, webcamCanvas.width, webcamCanvas.height);
 
-                $canvas.width = $container.clientWidth;
-                $canvas.height = $container.clientHeight;
-                $video.style.width = size.width + 'px';
-                $video.style.height = size.height + 'px';
+                const frame = ctx.getImageData(0, 0, webcamCanvas.width, webcamCanvas.height);
 
-                const ctx = $canvas.getContext('2d', { alpha: false, desynchronized: true });
-                const alva = await AlvaAR.Initialize($canvas.width, $canvas.height);
+                const pose = alva.findCameraPose(frame);
 
-                $container.appendChild($canvas);
+                if (pose) {
+                    var dataString = JSON.stringify(pose);
+                    unityInstance.SendMessage('CameraPoseManager', 'ReceiveCameraPose', dataString);
+                }
+                else {
+                    const dots = alva.getFramePoints();
 
-                onFrame(() => {
-                    ctx.clearRect(0, 0, $canvas.width, $canvas.height);
-                    ctx.drawImage($video, 0, 0, $video.videoWidth, $video.videoHeight, size.x, size.y, size.width, size.height);
-
-                    const frame = ctx.getImageData(0, 0, $canvas.width, $canvas.height);
-
-                    const pose = alva.findCameraPose(frame);
-
-                    if (pose) {
-                        // Send pose data to Unity
-                        if (typeof unityInstance !== 'undefined') {
-                            var dataString = JSON.stringify(pose);
-                            unityInstance.SendMessage('CameraPoseManager', 'ReceiveCameraPose', dataString);
-                        }
+                    for (const p of dots) {
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(p.x, p.y, 2, 2);
                     }
-                }, 30);
-            }
-
-            setTimeout(() => {
-                Camera.Initialize(config).then(media => calculatePose(media)).catch(error => alert('Camera ' + error));
-            }, 1000);
+                }
+            }, 30);
         }
 
-        // Initialize Unity WebGL
         function initializeUnity() {
             const script = document.createElement("script");
             script.src = loaderUrl;
@@ -121,7 +112,7 @@
                     window.unityInstance = unityInstance;
                     loadingCover.style.display = "none";
 
-                    main();
+                    startWebcam();
                 }).catch((message) => {
                     alert(message);
                 });
@@ -129,14 +120,9 @@
             document.body.appendChild(script);
         }
 
-        // Unity loading process with splash screen handling
         window.onload = () => {
-            // Initialize Unity first, and once Unity is ready, start the webcam
             initializeUnity();
         };
-
-
-
     </script>
 
     <script>
@@ -170,11 +156,6 @@
         progressBarFull.id = "unity-progress-bar-full";
         progressBarEmpty.appendChild(progressBarFull);
 
-        const fullscreenButton = document.createElement("button");
-        fullscreenButton.id = "unity-fullscreen-button";
-        fullscreenButton.innerText = "Fullscreen";
-        container.appendChild(fullscreenButton);
-
         const spinner = document.createElement("div");
         spinner.className = 'spinner';
         container.appendChild(spinner);
@@ -191,7 +172,6 @@
             }).then((unityInstance) => {
                 window.unityInstance = unityInstance;
                 loadingCover.style.display = "none";
-                console.log('done!');
             }).catch((message) => {
                 alert(message);
             });
